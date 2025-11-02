@@ -1,86 +1,122 @@
 # simple_AI_agent_LLMS
 AI-powered search agent that connects to ChatGPT and Claude, understands user queries, retrieves relevant information, and returns the most accurate and helpful response based on the input.
 ## Overview
+This repository provides a compact retrieval-first assistant that combines local document search with calls to external large‑model providers to answer natural‑language queries. It is intended as a reference implementation that emphasizes clear separation between indexing/retrieval, prompt construction, model adapters, and result selection so you can experiment with different stores and LLMs.
 
-This project implements a lightweight AI search agent that connects to multiple LLM providers (ChatGPT / OpenAI and Claude / Anthropic), accepts user queries, searches a local knowledge source, and returns the most relevant, concise answer by combining retrieval + LLM reasoning. It is intended as a small, extensible reference implementation rather than a production system.
+How it works (operational flow)
+1. Intake: a query arrives via the CLI or an API wrapper and is normalized and sanitized.
+2. Local search: the retriever scans the project’s knowledge artifacts (files, indices, or snippets) and returns a small set of high‑relevance passages.
+3. Prompt assembly: the system combines the user question with selected context using a template that controls verbosity and output format.
+4. Model orchestration: one or more provider adapters receive prompts (in parallel or sequence), send requests, and normalize responses and metadata (latency, token counts, error states).
+5. Selection and fusion: responses are scored on heuristics (relevance, confidence proxies, duplication) and optionally merged into a single concise answer with provenance notes.
+6. Persist/feedback: final output can be cached, logged, and stored with optional user feedback for future tuning.
 
-## Key features
+Design goals
+- Retrieval-first: reduce hallucination by grounding prompts in local evidence.
+- Provider-agnostic: small adapters let you swap or add LLM backends with minimal changes.
+- Minimal surface area: keep components small and testable so the repo is a learning-friendly starting point.
+- Configurable: timeouts, API keys, prompt templates, and retrieval parameters live in a central configuration layer.
 
-- Multi-LLM orchestration: send prompts to one or more LLM providers and aggregate results.
-- Retrieval-augmented responses: find relevant documents/snippets before asking the LLM.
-- Simple decision layer: choose or combine LLM outputs for the most accurate reply.
-- Easy to extend: swap retriever, vector store, or LLM client with minimal changes.
+Where to look in the code
+- The entrypoint shows runtime flags and how queries are accepted.
+- The search/index module contains document ingestion and scoring logic.
+- Provider adapters implement request/response normalization for external models.
+- The selector component encapsulates the final decision rules and merging strategy.
 
-## Architecture (high level)
+Developer workflow (quick)
+Open the project in the supplied devcontainer, provide credentials via environment variables or a .env file, ensure your knowledge files are indexed, then run the main entrypoint to try queries and iterate on prompts, retriever parameters, or adapters.
 
-- CLI / API layer — accepts user queries and options.
-- Query parser — normalizes and sanitizes incoming text.
-- Retriever — searches the local knowledge base (files or vector index) and returns top candidates.
-- LLM clients — small adapters for OpenAI/Claude that format prompts and handle rate/response differences.
-- Response selector — ranks/filters LLM outputs, optionally merges answers.
-- Utilities — caching, logging, configuration (API keys, timeouts).
+This README focuses on the high‑level flow; consult the source files for concrete examples, templates, and test cases that demonstrate each component in action.
 
-## Getting started
+## Usage
 
-1. Clone the repo and open the devcontainer (already provided in this workspace).
-2. Install dependencies:
-    - Typically: pip install -r requirements.txt
-3. Provide API keys in environment variables or a .env file:
-    - OPENAI_API_KEY=your_key
-    - CLAUDE_API_KEY=your_key
-4. Prepare or index your knowledge data (see data/ or scripts/ for indexing helpers).
-5. Run the agent (example CLI):
-    - python -m src.agent --query "What is the recommended retry pattern for network requests?"
+1. Install
+   - Create a virtual environment and install dependencies:
+     - python -m venv .venv
+     - source .venv/bin/activate
+     - pip install -r requirements.txt
 
-Adjust command names to match the repository layout (look in src/ or top-level scripts).
+2. Configuration
+   - Set provider API keys and config via environment variables or a config file (examples):
+     - export OPENAI_API_KEY="..."
+     - export CLAUDE_API_KEY="..."
+     - Copy or edit `config.example.yml` -> `config.yml` (if present) and update timeouts, retriever settings, and prompt templates.
 
-## Code layout (example)
+3. Index local documents
+   - Build or refresh the retrieval index (example command; adapt to your actual indexer):
+     - python -m app.indexer --source ./docs --out ./index
+   - This step extracts embeddings/snippets and stores them in the local store for fast retrieval.
 
-- src/
-  - agent.py — main orchestration and CLI entrypoint
-  - retriever.py — search/index helpers
-  - llm_clients.py — OpenAI & Claude adapters
-  - selector.py — logic to pick/merge LLM responses
-  - utils.py — config, logging, and helpers
-- data/ — documents, indices, and example content
-- requirements.txt — Python dependencies
-- tests/ — unit / integration tests
+4. Query (CLI)
+   - Run a query through the CLI:
+     - python -m app.cli query "How does X work?"
+   - The CLI prints the final answer and provenance (which documents provided context).
 
-(If file names differ slightly, map the concepts above to the actual files in the repository.)
+5. Run as API
+   - Start the API server (example using uvicorn):
+     - uvicorn app.api:app --reload --port 8000
+   - Send POST /query with JSON { "query": "...", "top_k": 5 }.
 
-## How the code works (brief)
+6. Tests
+   - Run unit tests:
+     - pytest
 
-1. Input arrives at src.agent: parsed and validated.
-2. The retriever identifies a small set of relevant passages.
-3. A prompt template is filled with the user query + retrieved context.
-4. Prompt(s) are sent to one or more LLM clients in parallel or sequence.
-5. The selector compares outputs (confidence heuristics, length, overlap) and returns the final response.
-6. Optional: store the conversation or feedback for future tuning.
+## File / Component Interaction (conceptual)
 
-## Interaction tips
+Below is a compact, implementation-agnostic map showing how pieces typically interact in this retrieval-first agent. Replace names with actual filenames in your repo.
 
-- Be explicit: include what you want (format, length, tone). Eg: "Summarize in 3 bullet points."
-- Provide context: if asking about a repo or document, include the document name or paste the relevant snippet.
-- Ask follow-ups: if the answer is unclear, ask the agent to "explain step 2" or "show sources".
-- Control verbosity: specify "short answer" vs "detailed explanation".
-- Use feedback: mark outputs as correct/incorrect to improve future selection logic (if implemented).
+- config.py
+  - Centralizes timeouts, provider endpoints, API keys, prompt templates, and retriever params.
+  - Used by all components to keep behavior consistent.
 
-## Troubleshooting
+- indexer.py
+  - Reads local files (PDFs, markdown, code, etc.), splits into passages, computes embeddings, and writes to a persistent store (vector DB, files).
+  - Invoked during the "index local documents" step.
 
-- If LLM calls fail: verify API keys and network access.
-- If retrieval returns poor results: re-index data or expand the retriever window/top-k.
-- If responses are inconsistent across LLMs: try prompting templates or prefer a single trusted provider.
+- retriever.py
+  - Queries the index to return the top-K most relevant passages for a sanitized user query.
+  - Returns passages + provenance metadata (file, offset, score).
 
-## Extending the agent
+- prompt.py (or templates/)
+  - Holds prompt templates and formatting helpers that combine user query + retrieved context into model prompts.
+  - Ensures constraints (token budget, instruction style, output format).
 
-- Add a new LLM client by implementing the adapter interface in src/llm_clients.py.
-- Swap the retriever for a vector DB (FAISS, Milvus) by replacing retriever.py internals.
-- Improve selection by adding rescoring or a lightweight verification LLM pass.
+- adapters/
+  - Provider adapters (e.g., adapters/openai.py, adapters/claude.py) implement a uniform interface:
+    - prepare_request(prompt, config) -> provider-specific payload
+    - call_provider(payload) -> raw response + metadata (latency, tokens)
+    - normalize_response(raw) -> standardized structure { text, score, tokens, error }
+  - Adding a new provider means writing a new adapter that follows the same interface.
 
-## Contributing & License
+- orchestrator.py (or runner.py)
+  - Coordinates calls: takes the assembled prompt(s), calls one or more adapters (in parallel or sequence), collects normalized results.
+  - Adds retries, timeouts, or fallback logic.
 
-- Follow existing coding patterns and add tests for new features.
-- Include a short description and examples for any new prompt templates.
-- Check the LICENSE file for project licensing information.
+- selector.py (or fusion.py)
+  - Scores and ranks provider responses using heuristics (relevance, confidence proxies, duplication) and optionally fuses them into one answer.
+  - Adds provenance notes and can apply post-processing (formatting, length control).
 
-For quick reference, open the main entrypoint file (src/agent.py) to see runtime options and example invocations.
+- cli.py / api.py
+  - Entry points: CLI parses args and calls the same core logic used by the API server.
+  - API wraps the same core functions behind HTTP endpoints for remote use.
+
+- cache.py / persistence.py / logger.py
+  - Optional components for caching results, storing logs/feedback, and writing telemetry (latency, token usage) for later tuning.
+
+Data flow (high level):
+1. User -> CLI or API
+2. Normalizer (sanitize/normalize query)
+3. Retriever -> top-K passages + provenance
+4. Prompt assembly -> template + context (respect token budget)
+5. Orchestrator -> calls provider adapters
+6. Adapters -> provider responses normalized
+7. Selector/Fuser -> pick/merge best response, attach provenance
+8. Output -> CLI/API response + optional persistence/feedback
+
+## Quick development notes / gotchas
+- Token budgets: ensure you implement truncation or smart selection of passages before sending to an LLM.
+- Determinism: adapter responses from providers are non-deterministic; seed or temperature controls help debugging.
+- Secrets: never commit API keys to repo — use env vars or secret stores.
+- Tests: mock adapters to test retrieval, prompt construction, and selection without hitting provider APIs.
+
+If you share the repository tree (or the actual filenames), I will produce a tailored README section that references the precise files in your project and integrate it into README.md exactly where you want.
