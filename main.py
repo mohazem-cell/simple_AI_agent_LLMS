@@ -8,6 +8,8 @@ from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplat
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from tools import search_tool,wiki_tool,save_tool
+# from langchain.agents import create_openai_functions_agent
+
 
 load_dotenv()
 
@@ -19,9 +21,14 @@ class ResearchResponse(BaseModel):
 
 # llm=ChatOpenAI(model="gpt-4o-mini")
 
+# llm2 = ChatOpenAI(
+#     model="deepseek-chat",
+#     api_key=os.getenv("DEEPSEEK_API_KEY"),
+#     base_url="https://openrouter.ai/api/v1",
+# )
 llm2 = ChatOpenAI(
-    # model="deepseek-chat",
-    api_key=os.getenv("DEEPSEEK_API_KEY"),
+    model="deepseek/deepseek-chat",          
+    api_key=os.getenv("DEEPSEEK_API_KEY"),  
     base_url="https://openrouter.ai/api/v1",
 )
 
@@ -29,34 +36,34 @@ llm2 = ChatOpenAI(
 
 parser = PydanticOutputParser(pydantic_object=ResearchResponse)
 
-# response = llm2.invoke("What is the capital of France?")
-# print(response.content)
+response = llm2.invoke("What is the capital of France?")
+print(response.content)
 
 # print("sofkokfor")
 
 
 prompt = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        """
-        You are an expert research assistant. 
-        Your task is to gather comprehensive information on a given topic, including a detailed summary, key points, relevant sources, and tools used for research. 
-        Wrap the outputs in this format and provide no other text.
-        {format_instructions}
-        """,
-    ),
+    ("system", """
+        You are a research assistent that will help generate a research paper. 
+        Answer the user query and use neccessary tools.
+        Wrap the output in this format and provide no other text:
+        \n{format_instructions}.
+    """),
     ("placeholder", "{chat_history}"),
     ("human", "{Query}"),
     ("placeholder", "{agent_scratchpad}")
 ]).partial(format_instructions=parser.get_format_instructions())
 
-tools=[search_tool , wiki_tool, save_tool]
+tools=[search_tool,wiki_tool,save_tool]
+# cars
+
+# for tool in tools:
+# print(f"Tool available: {tool.name} - {tool.description}")
 
 agent = create_tool_calling_agent(
     llm=llm2,
     tools=tools,
     prompt=prompt
-
     # output_parser=parser
 )
 
@@ -67,12 +74,16 @@ agent_executor = AgentExecutor.from_agent_and_tools(
 )
 while True:
     query = input("What can I help you? ")
-
+    if query.lower() in ["exit","quit","q"]:
+        break
     raw_response = agent_executor.invoke({"Query": query})
     # print("Raw response:", raw_response)
+    # print("Agent tools:", [tool.name for tool in agent_executor.tools])
+
     try:
         structured_response = parser.parse(raw_response.get("output",raw_response))#["output"])
         print(structured_response)
+        # print("Agent tools:", [tool.name for tool in agent_executor.tools])
         print("\n---------------------------------------------------------------------------\n")
 
     except Exception as e:

@@ -14,7 +14,7 @@ def save_to_file(content: str, filename: str = "research_output.txt") -> str:
     return f"Content saved to {filename}"
 
 save_tool = Tool(
-    name="save_text_to_file",
+    name="save_to_file",
     func=save_to_file,
     description="Saves the provided content to a text file and returns the filename."
 )
@@ -26,5 +26,5 @@ search_tool = Tool(
     description="Search the web for information."
 )
 
-wiki = WikipediaAPIWrapper(top_k_results=1,doc_content_chars_max=100)
+wiki = WikipediaAPIWrapper(top_k_results=1,doc_content_chars_max=1000)
 wiki_tool = WikipediaQueryRun(api_wrapper=wiki)
